@@ -1,0 +1,6 @@
+{
+  "name": "WealthPulse",
+  "description": "Personal wealth forecasting, accelerated loan amortization, and AI-powered bank statement intelligence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
