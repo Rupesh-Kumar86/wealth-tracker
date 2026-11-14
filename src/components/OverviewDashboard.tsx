@@ -33,6 +33,7 @@ import {
   formatMonthsToDuration,
   formatPercent,
 } from '../utils/format';
+import { NumericInput } from './NumericInput';
 
 export type ActiveTab = 'overview' | 'loan' | 'wealth' | 'statements';
 
@@ -57,14 +58,28 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
   onApplySurplusToEmi,
   onApplySurplusToSip,
 }) => {
-  const { currency, monthlySalary, investment, horizonYears } = state;
+  const { currency, monthlySalary, investments, horizonYears, loans } = state;
+  const totalCurrentCorpus = investments.reduce(
+    (sum, i) => sum + Math.max(0, i.currentCorpus),
+    0
+  );
+  const totalMonthlySip = investments.reduce(
+    (sum, i) => sum + (i.kind === 'LUMPSUM_INTEREST' ? 0 : Math.max(0, i.monthlySip)),
+    0
+  );
+  const primarySipInv =
+    investments.find((i) => i.kind === 'SIP_COMPOUND') || investments[0];
   const outstandingLoan = loanComparison.currentRemainingPrincipal;
-  const netWorth = investment.currentCorpus - outstandingLoan;
+  const netWorth = totalCurrentCorpus - outstandingLoan;
+  const activeLoansCount = loans.filter((l) => l.principal > 0).length;
+  const highestRateLoan = loans
+    .filter((l) => l.principal > 0)
+    .sort((a, b) => b.annualInterestRate - a.annualInterestRate)[0];
 
   const hasData =
     monthlySalary > 0 ||
-    state.loan.principal > 0 ||
-    investment.currentCorpus > 0 ||
+    outstandingLoan > 0 ||
+    totalCurrentCorpus > 0 ||
     state.transactions.length > 0;
 
   return (
@@ -82,12 +97,12 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
               <span className="text-sm font-mono text-[#94a3b8]">
                 {currency === 'INR' ? '₹' : '$'}
               </span>
-              <input
-                type="number"
+              <NumericInput
                 aria-label="Monthly Take-Home Salary"
-                value={monthlySalary || ''}
+                value={monthlySalary}
                 min={0}
-                onChange={(e) => onUpdateSalary(Math.max(0, Number(e.target.value) || 0))}
+                allowDecimal={false}
+                onChange={(val) => onUpdateSalary(val)}
                 className="w-full bg-transparent text-2xl font-bold font-mono tabular-nums text-[#f8fafc] focus:outline-none focus:ring-1 focus:ring-indigo-500/50 rounded px-1 -ml-1"
               />
             </div>
@@ -100,14 +115,15 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
         {/* KPI 2: Invested Corpus */}
         <div className="bg-[#1b1b1d] border border-[#2e2f36] rounded-2xl p-5 flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs font-medium text-[#94a3b8]">
-            <span>Invested Corpus</span>
+            <span>Invested &amp; Savings</span>
             <TrendingUp className="w-4 h-4 text-emerald-400" aria-hidden="true" />
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold font-mono tabular-nums text-[#f8fafc]">
-              {formatCompactCurrency(investment.currentCorpus, currency)}
+              {formatCompactCurrency(totalCurrentCorpus, currency)}
             </div>
             <p className="mt-1.5 text-xs text-emerald-400/90 tabular-nums">
+              {investments.length} {investments.length === 1 ? 'account' : 'accounts'} ·{' '}
               {formatCompactCurrency(wealthProjection.finalCorpus, currency)} in {horizonYears}Y
             </p>
           </div>
@@ -124,10 +140,10 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
               {formatCompactCurrency(outstandingLoan, currency)}
             </div>
             <p className="mt-1.5 text-xs text-[#94a3b8] tabular-nums">
-              {state.loan.principal > 0
-                ? `Payoff ${formatMonthYear(loanComparison.actualPayoffDate)} · ${formatMonthsToDuration(
-                    loanComparison.monthsSaved
-                  )} saved`
+              {outstandingLoan > 0
+                ? `${activeLoansCount} ${activeLoansCount === 1 ? 'loan' : 'loans'} · Payoff ${formatMonthYear(
+                    loanComparison.actualPayoffDate
+                  )}`
                 : 'No active loan configured'}
             </p>
           </div>
@@ -171,13 +187,13 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
               {state.transactions.length > 0
                 ? formatPercent(advisor.monthlySavingsRatePercent, 1)
                 : monthlySalary > 0
-                ? formatPercent((investment.monthlySip / monthlySalary) * 100, 1)
+                ? formatPercent((totalMonthlySip / monthlySalary) * 100, 1)
                 : '0.0%'}
             </div>
             <p className="mt-1.5 text-xs text-[#94a3b8] tabular-nums">
               {state.transactions.length > 0
                 ? `${formatCompactCurrency(advisor.monthlySavingsAmount, currency)} retained + invested`
-                : `${formatCompactCurrency(investment.monthlySip, currency)}/mo active SIP`}
+                : `${formatCompactCurrency(totalMonthlySip, currency)}/mo active SIP`}
             </p>
           </div>
         </div>
@@ -218,10 +234,8 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
                 Wealth vs. Remaining Debt Trajectory
               </h2>
               <p className="text-xs text-[#94a3b8] mt-1 tabular-nums">
-                {horizonYears}-year forecast at {investment.expectedCagrPercent}% CAGR
-                {investment.annualStepUpPercent > 0
-                  ? ` · ${investment.annualStepUpPercent}% annual SIP step-up`
-                  : ''}
+                {horizonYears}-year combined forecast across {investments.length}{' '}
+                {investments.length === 1 ? 'account' : 'accounts'}
                 {wealthProjection.crossoverCalendarYear && !wealthProjection.alreadyNetDebtFree
                   ? ` · Crossover ${wealthProjection.crossoverCalendarYear}`
                   : ''}
@@ -376,7 +390,7 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
                   Ideal Wealth Weightage
                 </h2>
                 <p className="text-xs text-[#94a3b8] mt-1">
-                  Actual monthly cash flow vs. target allocation · {advisor.activeMonthLabel}
+                  Loans &amp; Wealth plans + statement spend vs. salary ({advisor.activeMonthLabel})
                 </p>
               </div>
               <button
@@ -457,9 +471,13 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
           </div>
 
           <div className="mt-6 pt-4 border-t border-[#2a2a2b] flex items-center justify-between text-xs text-[#94a3b8]">
-            <span>Parsed Monthly Debits</span>
+            <span>Total Tracked Allocation</span>
             <span className="font-mono tabular-nums font-semibold text-[#f8fafc]">
-              {formatCurrency(advisor.monthlyTotalSpend, currency)} / mo
+              {formatCurrency(
+                advisor.buckets.reduce((sum, b) => sum + b.actualMonthlyAmount, 0),
+                currency
+              )}{' '}
+              / mo
             </span>
           </div>
         </div>
@@ -474,7 +492,11 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
                 Actionable Wealth Advisor
               </h2>
               <p className="text-xs text-[#94a3b8] mt-0.5">
-                Live simulations based on your expense leaks, loan rate ({state.loan.annualInterestRate}%), and CAGR ({investment.expectedCagrPercent}%)
+                Live simulations based on your expense leaks
+                {highestRateLoan
+                  ? `, ${highestRateLoan.name} (${highestRateLoan.annualInterestRate}%)`
+                  : ''}
+                , and {primarySipInv?.expectedCagrPercent ?? 12}% CAGR
               </p>
             </div>
           </div>
@@ -531,13 +553,13 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
                       +{formatCompactCurrency(insight.extraCorpus10YrIfRedirected, currency)}
                     </span>
                     <span className="block text-[11px] text-[#94a3b8]">
-                      at {investment.expectedCagrPercent}% CAGR
+                      at {primarySipInv?.expectedCagrPercent ?? 12}% CAGR
                     </span>
                   </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 pt-1">
-                  {state.loan.principal > 0 && insight.loanMonthsSavedIfRedirected > 0 && (
+                  {outstandingLoan > 0 && insight.loanMonthsSavedIfRedirected > 0 && (
                     <button
                       onClick={() => onApplySurplusToEmi(insight.monthlySurplusAmount)}
                       className="px-3 py-1.5 text-xs font-medium bg-[#2a2a2b] hover:bg-[#353436] text-[#e4e2e4] border border-[#39393b] rounded-lg transition-colors whitespace-nowrap shrink-0"

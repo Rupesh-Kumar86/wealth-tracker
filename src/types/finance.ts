@@ -34,15 +34,21 @@ export interface PrepaymentEntry {
 export interface LoanProfile {
   id: string;
   name: string;
-  principal: number;
+  originalPrincipal?: number; // Original loan amount taken at startDate
+  principal: number; // Current base amount left today
   annualInterestRate: number;
   originalTenureMonths: number;
-  startDate: string; // YYYY-MM-DD
-  actualMonthlyEmi: number;
+  startDate: string; // YYYY-MM-DD (when loan was taken)
+  actualMonthlyEmi: number; // Fixed monthly EMI paid going forward
   prepayments: PrepaymentEntry[];
 }
 
+export type InvestmentKind = 'SIP_COMPOUND' | 'LUMPSUM_INTEREST';
+
 export interface InvestmentProfile {
+  id: string;
+  name: string;
+  kind: InvestmentKind;
   currentCorpus: number;
   monthlySip: number;
   annualStepUpPercent: number;
@@ -78,29 +84,40 @@ export interface LoanSchedulePoint {
   monthIndex: number;
   date: string; // YYYY-MM
   yearLabel: string;
+  openingBalance: number;
+  emiPaid: number;
   baselineRemaining: number;
   actualRemaining: number;
+  closingBalance: number;
   baselineInterestCum: number;
   actualInterestCum: number;
   principalPaid: number;
   interestPaid: number;
   prepaymentApplied: number;
+  isFuture?: boolean;
 }
 
 export interface LoanComparisonResult {
   standardEmi: number;
   effectiveActualEmi: number;
+  firstMonthInterest: number;
+  isEmiInsufficient: boolean;
+  finalMonthEmi: number;
   baselineMonths: number;
   actualMonths: number;
+  futureMonthsRemaining: number;
   monthsSaved: number;
   baselineTotalInterest: number;
   actualTotalInterest: number;
+  futureInterestPayable: number;
   interestSaved: number;
   totalPrepaid: number;
   baselinePayoffDate: string; // YYYY-MM
   actualPayoffDate: string; // YYYY-MM
+  todayDateYm: string; // YYYY-MM
   currentRemainingPrincipal: number;
   currentBaselineRemainingPrincipal: number;
+  aheadOfBaselineAmount: number;
   elapsedMonths: number;
   monthlySchedule: LoanSchedulePoint[];
   yearlySchedule: LoanSchedulePoint[];
@@ -176,8 +193,8 @@ export interface AllocationAdvisorResult {
 export interface AppState {
   currency: CurrencyCode;
   monthlySalary: number;
-  loan: LoanProfile;
-  investment: InvestmentProfile;
+  loans: LoanProfile[];
+  investments: InvestmentProfile[];
   horizonYears: number;
   transactions: Transaction[];
   customRules: CategoryRule[];

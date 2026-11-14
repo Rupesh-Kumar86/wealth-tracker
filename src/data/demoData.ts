@@ -8,41 +8,74 @@ export const DEFAULT_IDEAL_TARGETS: IdealTargets = {
 };
 
 export function getDemoState(currency: CurrencyCode = 'INR'): AppState {
+  const twoYearsAgo = new Date();
+  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+  const twoYearsAgoStart = `${twoYearsAgo.getFullYear()}-${String(
+    twoYearsAgo.getMonth() + 1
+  ).padStart(2, '0')}-01`;
+
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+  const oneYearAgoStart = `${oneYearAgo.getFullYear()}-${String(
+    oneYearAgo.getMonth() + 1
+  ).padStart(2, '0')}-01`;
+
   if (currency === 'USD') {
     return {
       currency: 'USD',
       monthlySalary: 9500,
-      loan: {
-        id: 'loan-home-usd',
-        name: 'Primary Residence Mortgage',
-        principal: 480000,
-        annualInterestRate: 6.45,
-        originalTenureMonths: 360,
-        startDate: '2023-05-01',
-        actualMonthlyEmi: 3450,
-        prepayments: [
-          {
-            id: 'prep-1',
-            date: '2024-11-01',
-            amount: 12000,
-            frequency: 'ONE_TIME',
-            label: 'Year-End Bonus Principal Paydown',
-          },
-          {
-            id: 'prep-2',
-            date: '2026-04-01',
-            amount: 8000,
-            frequency: 'ANNUAL',
-            label: 'Annual Tax Refund Prepayment',
-          },
-        ],
-      },
-      investment: {
-        currentCorpus: 112000,
-        monthlySip: 2200,
-        annualStepUpPercent: 8,
-        expectedCagrPercent: 10.5,
-      },
+      loans: [
+        {
+          id: 'loan-home-usd',
+          name: 'Primary Residence Mortgage',
+          originalPrincipal: 480000,
+          principal: 420000,
+          annualInterestRate: 6.45,
+          originalTenureMonths: 360,
+          startDate: twoYearsAgoStart,
+          actualMonthlyEmi: 3450,
+          prepayments: [
+            {
+              id: 'prep-1',
+              date: '2027-04-01',
+              amount: 8000,
+              frequency: 'ANNUAL',
+              label: 'Annual Tax Refund Prepayment',
+            },
+          ],
+        },
+        {
+          id: 'loan-auto-usd',
+          name: 'Auto Loan',
+          originalPrincipal: 36000,
+          principal: 25500,
+          annualInterestRate: 5.9,
+          originalTenureMonths: 60,
+          startDate: oneYearAgoStart,
+          actualMonthlyEmi: 850,
+          prepayments: [],
+        },
+      ],
+      investments: [
+        {
+          id: 'inv-equity-usd',
+          name: 'Index Funds & 401(k)',
+          kind: 'SIP_COMPOUND',
+          currentCorpus: 82000,
+          monthlySip: 2200,
+          annualStepUpPercent: 8,
+          expectedCagrPercent: 10.5,
+        },
+        {
+          id: 'inv-hysa-usd',
+          name: 'High-Yield Savings',
+          kind: 'LUMPSUM_INTEREST',
+          currentCorpus: 30000,
+          monthlySip: 0,
+          annualStepUpPercent: 0,
+          expectedCagrPercent: 5,
+        },
+      ],
       horizonYears: 15,
       idealTargets: { ...DEFAULT_IDEAL_TARGETS },
       customRules: [
@@ -175,37 +208,58 @@ export function getDemoState(currency: CurrencyCode = 'INR'): AppState {
   return {
     currency: 'INR',
     monthlySalary: 215000,
-    loan: {
-      id: 'loan-home-inr',
-      name: 'HDFC Home Loan',
-      principal: 8500000,
-      annualInterestRate: 8.65,
-      originalTenureMonths: 360,
-      startDate: '2023-04-01',
-      actualMonthlyEmi: 76000,
-      prepayments: [
-        {
-          id: 'prep-1',
-          date: '2024-11-01',
-          amount: 250000,
-          frequency: 'ONE_TIME',
-          label: 'Diwali Bonus Prepayment',
-        },
-        {
-          id: 'prep-2',
-          date: '2026-04-01',
-          amount: 180000,
-          frequency: 'ANNUAL',
-          label: 'Annual Appraisal Lump Sum',
-        },
-      ],
-    },
-    investment: {
-      currentCorpus: 1850000,
-      monthlySip: 52000,
-      annualStepUpPercent: 10,
-      expectedCagrPercent: 12,
-    },
+    loans: [
+      {
+        id: 'loan-home-inr',
+        name: 'HDFC Home Loan',
+        originalPrincipal: 5400000,
+        principal: 4400000,
+        annualInterestRate: 8.65,
+        originalTenureMonths: 240,
+        startDate: twoYearsAgoStart,
+        actualMonthlyEmi: 56000,
+        prepayments: [
+          {
+            id: 'prep-1',
+            date: '2027-04-01',
+            amount: 150000,
+            frequency: 'ANNUAL',
+            label: 'Annual Appraisal Lump Sum',
+          },
+        ],
+      },
+      {
+        id: 'loan-car-inr',
+        name: 'ICICI Car Loan',
+        originalPrincipal: 1200000,
+        principal: 850000,
+        annualInterestRate: 9.15,
+        originalTenureMonths: 60,
+        startDate: oneYearAgoStart,
+        actualMonthlyEmi: 28000,
+        prepayments: [],
+      },
+    ],
+    investments: [
+      {
+        id: 'inv-mf-inr',
+        name: 'Equity & Mutual Funds',
+        kind: 'SIP_COMPOUND',
+        currentCorpus: 1250000,
+        monthlySip: 52000,
+        annualStepUpPercent: 10,
+        expectedCagrPercent: 12,
+      },
+      {
+        id: 'inv-fd-inr',
+        name: 'Fixed Deposit / Savings',
+        kind: 'LUMPSUM_INTEREST',
+        currentCorpus: 600000,
+        monthlySip: 0,
+        annualStepUpPercent: 0,
+        expectedCagrPercent: 7,
+      },
+    ],
     horizonYears: 15,
     idealTargets: { ...DEFAULT_IDEAL_TARGETS },
     customRules: [
@@ -236,10 +290,19 @@ export function getDemoState(currency: CurrencyCode = 'INR'): AppState {
         id: 'tx-2',
         date: '2026-10-03',
         narration: 'NACH/HDFC HOME LOAN EMI/8839201',
-        amount: 76000,
+        amount: 56000,
         type: 'DEBIT',
         category: 'Loans & EMI',
         merchantKeyword: 'HDFC',
+      },
+      {
+        id: 'tx-2b',
+        date: '2026-10-04',
+        narration: 'NACH/ICICI CAR LOAN EMI/4412093',
+        amount: 28000,
+        type: 'DEBIT',
+        category: 'Loans & EMI',
+        merchantKeyword: 'ICICI',
       },
       {
         id: 'tx-3',
@@ -367,22 +430,30 @@ export function getEmptyState(currency: CurrencyCode = 'INR'): AppState {
   return {
     currency,
     monthlySalary: currency === 'INR' ? 100000 : 6000,
-    loan: {
-      id: 'loan-default',
-      name: 'Primary Loan',
-      principal: 0,
-      annualInterestRate: currency === 'INR' ? 8.5 : 6.5,
-      originalTenureMonths: 240,
-      startDate: today,
-      actualMonthlyEmi: 0,
-      prepayments: [],
-    },
-    investment: {
-      currentCorpus: 0,
-      monthlySip: 0,
-      annualStepUpPercent: 5,
-      expectedCagrPercent: 12,
-    },
+    loans: [
+      {
+        id: 'loan-default',
+        name: 'Primary Loan',
+        originalPrincipal: 0,
+        principal: 0,
+        annualInterestRate: currency === 'INR' ? 8.5 : 6.5,
+        originalTenureMonths: 240,
+        startDate: today,
+        actualMonthlyEmi: 0,
+        prepayments: [],
+      },
+    ],
+    investments: [
+      {
+        id: 'inv-default',
+        name: 'Primary Investment',
+        kind: 'SIP_COMPOUND',
+        currentCorpus: 0,
+        monthlySip: 0,
+        annualStepUpPercent: 5,
+        expectedCagrPercent: 12,
+      },
+    ],
     horizonYears: 10,
     transactions: [],
     customRules: [],

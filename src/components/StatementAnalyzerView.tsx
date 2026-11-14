@@ -37,6 +37,7 @@ import {
 } from '../utils/format';
 import { extractMerchantKeyword } from '../utils/finance';
 import { DEFAULT_IDEAL_TARGETS } from '../data/demoData';
+import { NumericInput } from './NumericInput';
 
 interface StatementAnalyzerViewProps {
   currency: CurrencyCode;
@@ -551,7 +552,7 @@ export const StatementAnalyzerView: React.FC<StatementAnalyzerViewProps> = ({
                   Ideal Wealth Weightage Targets
                 </h3>
                 <p className="text-xs text-[#94a3b8] mt-0.5">
-                  Compare spending as % of monthly salary ({formatCurrency(monthlySalary, currency)})
+                  Reads SIPs from Wealth, EMIs from Loans, and expenses from statements vs. {formatCurrency(monthlySalary, currency)} salary
                 </p>
               </div>
               <button
@@ -570,13 +571,11 @@ export const StatementAnalyzerView: React.FC<StatementAnalyzerViewProps> = ({
                 <span className="text-xs font-mono text-[#94a3b8]">
                   {currency === 'INR' ? '₹' : '$'}
                 </span>
-                <input
-                  type="number"
-                  min={0}
+                <NumericInput
                   value={monthlySalary}
-                  onChange={(e) =>
-                    onUpdateSalary(Math.max(0, Number(e.target.value) || 0))
-                  }
+                  min={0}
+                  allowDecimal={false}
+                  onChange={(val) => onUpdateSalary(val)}
                   className="w-28 bg-transparent text-right text-sm font-mono tabular-nums font-semibold text-[#f8fafc] focus:outline-none focus:ring-1 focus:ring-indigo-500 rounded px-1"
                 />
               </div>
@@ -585,9 +584,17 @@ export const StatementAnalyzerView: React.FC<StatementAnalyzerViewProps> = ({
             <div className="space-y-4">
               {advisor.buckets.map((bucket) => (
                 <div key={bucket.key} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-[#e4e2e4]">{bucket.label}</span>
-                    <div className="flex items-center gap-3 font-mono tabular-nums">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <div className="min-w-0">
+                      <span className="font-medium text-[#e4e2e4]">{bucket.label}</span>
+                      <span className="block text-[11px] text-[#64748b] truncate">
+                        {bucket.description} ·{' '}
+                        <span className="font-mono tabular-nums text-[#94a3b8]">
+                          {formatCurrency(bucket.actualMonthlyAmount, currency)}/mo
+                        </span>
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 font-mono tabular-nums shrink-0">
                       <span
                         className={
                           bucket.status === 'on-track'
@@ -602,14 +609,12 @@ export const StatementAnalyzerView: React.FC<StatementAnalyzerViewProps> = ({
                       <span className="text-[#64748b]">·</span>
                       <label className="text-[#94a3b8] inline-flex items-center gap-1">
                         Target
-                        <input
-                          type="number"
+                        <NumericInput
+                          value={idealTargets[bucket.key]}
                           min={0}
                           max={100}
-                          value={idealTargets[bucket.key]}
-                          onChange={(e) =>
-                            handleTargetChange(bucket.key, Number(e.target.value) || 0)
-                          }
+                          allowDecimal={false}
+                          onChange={(val) => handleTargetChange(bucket.key, val)}
                           className="w-12 bg-[#131315] border border-[#353436] rounded px-1.5 py-0.5 text-right text-xs text-[#f8fafc] focus:outline-none focus:border-indigo-500"
                         />
                         %

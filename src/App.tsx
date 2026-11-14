@@ -1,25 +1,34 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
   Download,
   FileSpreadsheet,
+  FolderUp,
   Landmark,
   LayoutDashboard,
   Menu,
   RotateCcw,
+  Save,
   Sparkles,
   TrendingUp,
   Upload,
   X,
 } from 'lucide-react';
-import { AppState, CurrencyCode } from './types/finance';
+import {
+  AppState,
+  CurrencyCode,
+  InvestmentProfile,
+  LoanProfile,
+} from './types/finance';
 import { getDemoState, getEmptyState } from './data/demoData';
 import {
   applyRulesToTransactions,
+  calculateCombinedInvestments,
+  calculateCombinedLoans,
   calculateLoanComparison,
-  calculateWealthProjection,
   computeAllocationAndAdvisor,
 } from './utils/finance';
+import { buildBackupPayload, parseImportedState } from './utils/backup';
 import { formatCompactCurrency } from './utils/format';
 import { ActiveTab, OverviewDashboard } from './components/OverviewDashboard';
 import { LoanTrajectoryView } from './components/LoanTrajectoryView';
@@ -28,22 +37,58 @@ import { StatementAnalyzerView } from './components/StatementAnalyzerView';
 
 const STORAGE_KEY = 'wealthpulse_state_v1';
 
+interface LegacyAppState extends Partial<AppState> {
+  loan?: LoanProfile;
+  investment?: Partial<InvestmentProfile>;
+}
+
 function loadInitialState(): AppState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<AppState>;
+      const parsed = JSON.parse(raw) as LegacyAppState;
       const demo = getDemoState(parsed.currency === 'USD' ? 'USD' : 'INR');
+
+      const migratedLoans = Array.isArray(parsed.loans)
+        ? parsed.loans
+        : parsed.loan
+        ? [parsed.loan]
+        : demo.loans;
+
+      const migratedInvestments: InvestmentProfile[] = Array.isArray(
+        parsed.investments
+      )
+        ? parsed.investments.map((inv, idx) => ({
+            id: inv.id || `inv-${idx}`,
+            name: inv.name || `Investment ${idx + 1}`,
+            kind: inv.kind || 'SIP_COMPOUND',
+            currentCorpus: inv.currentCorpus ?? 0,
+            monthlySip: inv.monthlySip ?? 0,
+            annualStepUpPercent: inv.annualStepUpPercent ?? 0,
+            expectedCagrPercent: inv.expectedCagrPercent ?? 12,
+          }))
+        : parsed.investment
+        ? [
+            {
+              id: 'inv-migrated',
+              name: 'Primary Portfolio',
+              kind: 'SIP_COMPOUND',
+              currentCorpus: parsed.investment.currentCorpus ?? 0,
+              monthlySip: parsed.investment.monthlySip ?? 0,
+              annualStepUpPercent: parsed.investment.annualStepUpPercent ?? 0,
+              expectedCagrPercent: parsed.investment.expectedCagrPercent ?? 12,
+            },
+          ]
+        : demo.investments;
+
       return {
         currency: parsed.currency === 'USD' ? 'USD' : 'INR',
         monthlySalary:
           typeof parsed.monthlySalary === 'number'
             ? parsed.monthlySalary
             : demo.monthlySalary,
-        loan: parsed.loan ? { ...demo.loan, ...parsed.loan } : demo.loan,
-        investment: parsed.investment
-          ? { ...demo.investment, ...parsed.investment }
-          : demo.investment,
+        loans: migratedLoans,
+        investments: migratedInvestments,
         horizonYears:
           typeof parsed.horizonYears === 'number'
             ? parsed.horizonYears
@@ -81,6 +126,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const backupInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     try {
@@ -101,19 +147,20 @@ export default function App() {
   };
 
   // Real-time financial calculation engines
-  const loanComparison = useMemo(
-    () => calculateLoanComparison(state.loan),
-    [state.loan]
-  );
+  const { individual: individualLoanResults, combined: combinedLoanComparison } =
+    useMemo(() => calculateCombinedLoans(state.loans), [state.loans]);
 
-  const wealthProjection = useMemo(
+  const {
+    individual: individualInvestmentResults,
+    combined: combinedWealthProjection,
+  } = useMemo(
     () =>
-      calculateWealthProjection(
-        state.investment,
+      calculateCombinedInvestments(
+        state.investments,
         state.horizonYears,
-        loanComparison
+        combinedLoanComparison
       ),
-    [state.investment, state.horizonYears, loanComparison]
+    [state.investments, state.horizonYears, combinedLoanComparison]
   );
 
   const advisor = useMemo(
@@ -122,17 +169,17 @@ export default function App() {
         state.transactions,
         state.monthlySalary,
         state.idealTargets,
-        state.loan,
-        state.investment,
-        loanComparison
+        state.loans,
+        state.investments,
+        combinedLoanComparison
       ),
     [
       state.transactions,
       state.monthlySalary,
       state.idealTargets,
-      state.loan,
-      state.investment,
-      loanComparison,
+      state.loans,
+      state.investments,
+      combinedLoanComparison,
     ]
   );
 
@@ -143,7 +190,9 @@ export default function App() {
   const handleLoadDemo = () => {
     const demo = getDemoState(state.currency);
     setState(demo);
-    showToast(`Loaded ${state.currency} demo profile with sample transactions.`);
+    showToast(
+      `Loaded ${state.currency} demo profile with 2 loans, 2 investments, and sample transactions.`
+    );
   };
 
   const handleResetData = () => {
@@ -152,67 +201,123 @@ export default function App() {
     showToast('Workspace cleared. All figures reset.');
   };
 
-  const handleExportReportJson = () => {
-    const report = {
-      exportedAt: new Date().toISOString(),
-      currency: state.currency,
-      monthlySalary: state.monthlySalary,
-      loanSummary: {
-        ...state.loan,
-        standardEmi: loanComparison.standardEmi,
-        actualPayoffDate: loanComparison.actualPayoffDate,
-        monthsSaved: loanComparison.monthsSaved,
-        interestSaved: loanComparison.interestSaved,
-      },
-      wealthProjection: {
-        ...state.investment,
-        horizonYears: state.horizonYears,
-        finalCorpus: wealthProjection.finalCorpus,
-        crossoverCalendarYear: wealthProjection.crossoverCalendarYear,
-      },
-      allocationBuckets: advisor.buckets,
-      transactions: state.transactions,
-    };
+  const handleSaveLocally = () => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      showToast(
+        `Saved locally (${state.loans.length} loans, ${state.investments.length} investments, ${state.transactions.length} txns).`
+      );
+    } catch {
+      showToast('Unable to write to browser storage (storage quota exceeded).');
+    }
+  };
 
-    const blob = new Blob([JSON.stringify(report, null, 2)], {
+  const handleExportReportJson = () => {
+    const payload = buildBackupPayload(
+      state,
+      combinedLoanComparison,
+      combinedWealthProjection,
+      advisor
+    );
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `wealthpulse-report-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `wealthpulse-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('Exported complete financial report JSON.');
+    showToast('Exported complete backup (.json) with all your saved numbers.');
+  };
+
+  const handleImportBackupFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsedJson = JSON.parse(text);
+      const restoredState = parseImportedState(parsedJson);
+      setState(restoredState);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(restoredState));
+      } catch {
+        // Ignore storage quota error
+      }
+      showToast(
+        `Restored backup: ${restoredState.loans.length} loans, ${restoredState.investments.length} investments, ${restoredState.transactions.length} txns.`
+      );
+    } catch (err: unknown) {
+      showToast(
+        err instanceof Error
+          ? err.message
+          : 'Could not import backup file. Ensure it is a valid WealthPulse JSON file.'
+      );
+    }
   };
 
   const handleApplySurplusToEmi = (extraMonthly: number) => {
+    const target =
+      state.loans
+        .filter((l) => l.principal > 0)
+        .sort((a, b) => b.annualInterestRate - a.annualInterestRate)[0] ||
+      state.loans[0];
+    if (!target) return;
+
+    const targetBaseEmi = calculateLoanComparison(target).effectiveActualEmi;
     setState((prev) => ({
       ...prev,
-      loan: {
-        ...prev.loan,
-        actualMonthlyEmi: Math.round(
-          Math.max(loanComparison.standardEmi, prev.loan.actualMonthlyEmi) +
-            extraMonthly
-        ),
-      },
+      loans: prev.loans.map((l) =>
+        l.id === target.id
+          ? { ...l, actualMonthlyEmi: Math.round(targetBaseEmi + extraMonthly) }
+          : l
+      ),
     }));
     showToast(
-      `Boosted Monthly EMI by ${formatCompactCurrency(extraMonthly, state.currency)}.`
+      `Boosted ${target.name} EMI by ${formatCompactCurrency(
+        extraMonthly,
+        state.currency
+      )}.`
     );
   };
 
   const handleApplySurplusToSip = (extraMonthly: number) => {
-    setState((prev) => ({
-      ...prev,
-      investment: {
-        ...prev.investment,
-        monthlySip: Math.round(prev.investment.monthlySip + extraMonthly),
-      },
-    }));
-    showToast(
-      `Boosted Monthly SIP by ${formatCompactCurrency(extraMonthly, state.currency)}.`
-    );
+    const targetSip = state.investments.find((i) => i.kind === 'SIP_COMPOUND');
+    if (targetSip) {
+      setState((prev) => ({
+        ...prev,
+        investments: prev.investments.map((inv) =>
+          inv.id === targetSip.id
+            ? { ...inv, monthlySip: Math.round(inv.monthlySip + extraMonthly) }
+            : inv
+        ),
+      }));
+      showToast(
+        `Boosted ${targetSip.name} SIP by ${formatCompactCurrency(
+          extraMonthly,
+          state.currency
+        )}.`
+      );
+    } else {
+      const newSip: InvestmentProfile = {
+        id: `inv-${Date.now()}`,
+        name: 'Equity SIP Portfolio',
+        kind: 'SIP_COMPOUND',
+        currentCorpus: 0,
+        monthlySip: Math.round(extraMonthly),
+        annualStepUpPercent: 10,
+        expectedCagrPercent: 12,
+      };
+      setState((prev) => ({
+        ...prev,
+        investments: [...prev.investments, newSip],
+      }));
+      showToast(
+        `Created Equity SIP with ${formatCompactCurrency(
+          extraMonthly,
+          state.currency
+        )}/mo.`
+      );
+    }
   };
 
   const activeNavLabel =
@@ -264,6 +369,45 @@ export default function App() {
         </nav>
 
         <div className="p-4 border-t border-[#2a2a2b] space-y-2">
+          <input
+            ref={backupInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleImportBackupFile(file);
+              e.target.value = '';
+            }}
+          />
+          <button
+            type="button"
+            onClick={handleSaveLocally}
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-emerald-200 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-lg transition-colors whitespace-nowrap"
+          >
+            <Save className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span>Save Numbers Locally</span>
+          </button>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={handleExportReportJson}
+              className="flex items-center justify-center gap-1.5 px-2.5 py-2 text-xs font-medium text-[#c6c6cd] hover:text-white bg-[#1b1b1d] hover:bg-[#2a2a2b] border border-[#2e2f36] rounded-lg transition-colors whitespace-nowrap"
+              title="Download full JSON backup of all your figures"
+            >
+              <Download className="w-3.5 h-3.5 text-[#94a3b8] shrink-0" />
+              <span>Export</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => backupInputRef.current?.click()}
+              className="flex items-center justify-center gap-1.5 px-2.5 py-2 text-xs font-medium text-[#c6c6cd] hover:text-white bg-[#1b1b1d] hover:bg-[#2a2a2b] border border-[#2e2f36] rounded-lg transition-colors whitespace-nowrap"
+              title="Restore saved numbers from a previously exported JSON file"
+            >
+              <FolderUp className="w-3.5 h-3.5 text-[#94a3b8] shrink-0" />
+              <span>Import</span>
+            </button>
+          </div>
           <button
             type="button"
             onClick={handleLoadDemo}
@@ -271,14 +415,6 @@ export default function App() {
           >
             <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
             <span>Load Demo Data ({state.currency})</span>
-          </button>
-          <button
-            type="button"
-            onClick={handleExportReportJson}
-            className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-[#c6c6cd] hover:text-white bg-transparent hover:bg-[#1b1b1d] border border-[#2a2a2b] rounded-lg transition-colors whitespace-nowrap"
-          >
-            <Download className="w-3.5 h-3.5 text-[#94a3b8] shrink-0" />
-            <span>Export JSON Report</span>
           </button>
           <button
             type="button"
@@ -338,6 +474,41 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
+                  handleSaveLocally();
+                  setMobileMenuOpen(false);
+                }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-emerald-200 bg-emerald-500/10 border border-emerald-500/30 rounded-lg"
+              >
+                <Save className="w-3.5 h-3.5 text-emerald-400" />
+                Save Numbers Locally
+              </button>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleExportReportJson();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center justify-center gap-1.5 px-2.5 py-2 text-xs font-medium bg-[#1b1b1d] border border-[#2e2f36] rounded-lg"
+                >
+                  <Download className="w-3.5 h-3.5 text-[#94a3b8]" />
+                  Export
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    backupInputRef.current?.click();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="flex items-center justify-center gap-1.5 px-2.5 py-2 text-xs font-medium bg-[#1b1b1d] border border-[#2e2f36] rounded-lg"
+                >
+                  <FolderUp className="w-3.5 h-3.5 text-[#94a3b8]" />
+                  Import
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
                   handleLoadDemo();
                   setMobileMenuOpen(false);
                 }}
@@ -383,7 +554,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            {/* Currency Formatter Toggle */}
             <div
               className="flex items-center gap-1 p-1 bg-[#1b1b1d] border border-[#2e2f36] rounded-lg"
               role="group"
@@ -430,8 +600,8 @@ export default function App() {
           {activeTab === 'overview' && (
             <OverviewDashboard
               state={state}
-              loanComparison={loanComparison}
-              wealthProjection={wealthProjection}
+              loanComparison={combinedLoanComparison}
+              wealthProjection={combinedWealthProjection}
               advisor={advisor}
               onNavigate={setActiveTab}
               onUpdateSalary={(monthlySalary) =>
@@ -445,21 +615,23 @@ export default function App() {
           {activeTab === 'loan' && (
             <LoanTrajectoryView
               currency={state.currency}
-              loan={state.loan}
-              comparison={loanComparison}
-              onUpdateLoan={(loan) => setState((prev) => ({ ...prev, loan }))}
+              loans={state.loans}
+              individualResults={individualLoanResults}
+              combinedComparison={combinedLoanComparison}
+              onUpdateLoans={(loans) => setState((prev) => ({ ...prev, loans }))}
             />
           )}
 
           {activeTab === 'wealth' && (
             <WealthForecasterView
               currency={state.currency}
-              investment={state.investment}
+              investments={state.investments}
+              individualResults={individualInvestmentResults}
+              combinedProjection={combinedWealthProjection}
               horizonYears={state.horizonYears}
-              projection={wealthProjection}
-              loanComparison={loanComparison}
-              onUpdateInvestment={(investment) =>
-                setState((prev) => ({ ...prev, investment }))
+              loanComparison={combinedLoanComparison}
+              onUpdateInvestments={(investments) =>
+                setState((prev) => ({ ...prev, investments }))
               }
               onUpdateHorizon={(horizonYears) =>
                 setState((prev) => ({ ...prev, horizonYears }))
